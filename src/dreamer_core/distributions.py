@@ -1,7 +1,7 @@
 """Categorical helpers shared by the latent state and the policy.
 
-All functions take *normalised log-probabilities* (the output of :func:`unimix_logits`) or raw
-logits; both work because every function re-normalises with ``log_softmax``.
+All functions take *normalized log-probabilities* (the output of :func:`unimix_logits`) or raw
+logits; both work because every function re-normalizes with ``log_softmax``.
 """
 
 from __future__ import annotations
@@ -54,13 +54,13 @@ def mode_one_hot(logits: Tensor) -> Tensor:
 
 
 def categorical_kl(p_logits: Tensor, q_logits: Tensor) -> Tensor:
-    """``KL(p || q)`` over the last dimension, from (possibly unnormalised) logits."""
+    """``KL(p || q)`` over the last dimension, from (possibly unnormalized) logits."""
     log_p = F.log_softmax(p_logits, dim=-1)
     log_q = F.log_softmax(q_logits, dim=-1)
     return (log_p.exp() * (log_p - log_q)).sum(-1)
 
 
 def categorical_entropy(logits: Tensor) -> Tensor:
-    """Entropy over the last dimension, from (possibly unnormalised) logits."""
+    """Entropy over the last dimension, from (possibly unnormalized) logits."""
     log_p = F.log_softmax(logits, dim=-1)
     return -(log_p.exp() * log_p).sum(-1)

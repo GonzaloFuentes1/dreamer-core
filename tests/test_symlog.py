@@ -28,7 +28,7 @@ def test_symlog_matches_closed_form() -> None:
 
 
 def _reference_twohot(value: float, bins: np.ndarray) -> np.ndarray:
-    """Independent loop-based two-hot in symlog space, written without vectorisation."""
+    """Independent loop-based two-hot in symlog space, written without vectorization."""
     x = float(np.sign(value) * np.log1p(abs(value)))
     x = min(max(x, bins[0]), bins[-1])
     out = np.zeros_like(bins)
@@ -97,7 +97,7 @@ def test_out_of_range_targets_clip_to_edge_bins() -> None:
 
 def test_loss_gradient_is_softmax_minus_two_hot() -> None:
     # Cross-entropy against a fixed target distribution w has gradient softmax(l) - w, so the
-    # loss is minimised exactly when the predicted distribution equals the two-hot target.
+    # loss is minimized exactly when the predicted distribution equals the two-hot target.
     head = TwoHot(num_bins=21, low=-5.0, high=5.0)
     target = torch.tensor([2.3, -0.7, 40.0], dtype=torch.float64)
     gen = torch.Generator().manual_seed(0)

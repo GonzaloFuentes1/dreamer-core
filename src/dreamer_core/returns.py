@@ -1,13 +1,13 @@
-"""Lambda-returns and percentile return normalisation.
+"""Lambda-returns and percentile return normalization.
 
 Lambda-returns trade off the bias of bootstrapping from a learned critic against the variance
 of long Monte-Carlo sums of predicted rewards; imagined trajectories are short (15 steps in
 DreamerV3), so bootstrapping at the horizon is required anyway.
 
-Return normalisation makes a single entropy coefficient work across reward scales. Dividing
+Return normalization makes a single entropy coefficient work across reward scales. Dividing
 advantages by the spread of returns keeps the policy-gradient magnitude roughly constant, and
 the ``max(1, S)`` floor avoids *amplifying* noise when returns are small, which is what a
-plain standard-deviation normalisation would do in sparse-reward tasks. Percentiles instead of
+plain standard-deviation normalization would do in sparse-reward tasks. Percentiles instead of
 min/max make the scale robust to a few outlier returns.
 """
 
@@ -28,7 +28,7 @@ def lambda_return(
 
     Shapes: ``reward`` and ``cont`` are ``(batch, T)`` and describe the transition from step
     ``t`` to ``t + 1``; ``value`` is ``(batch, T + 1)`` with the bootstrap ``v_T`` in the last
-    column, which also initialises the recursion (``R_T = v_T``). ``cont`` is the probability
+    column, which also initializes the recursion (``R_T = v_T``). ``cont`` is the probability
     (or indicator) that the episode continues, so a terminal transition cuts the bootstrap.
     """
     if value.shape[1] != reward.shape[1] + 1:
@@ -80,5 +80,5 @@ class ReturnNormalizer(nn.Module):
         return torch.clamp(self.high - self.low, min=self.limit)
 
     def advantage(self, returns: Tensor, baseline: Tensor) -> Tensor:
-        """Normalised advantage ``(R - v) / max(1, S)`` (no offset: it cancels in R - v)."""
+        """Normalized advantage ``(R - v) / max(1, S)`` (no offset: it cancels in R - v)."""
         return (returns - baseline) / self.scale.to(returns.dtype)
