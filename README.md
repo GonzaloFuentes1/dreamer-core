@@ -94,8 +94,10 @@ magnitude of `y`.
 Tests (`tests/test_symlog.py`): `symexp(symlog(x)) == x` to 1e-12 relative error over 15
 orders of magnitude; two-hot weights match an independent loop-based reference; weights sum
 to one and sit on at most two adjacent bins; `decode(encode(y)) == y`; out-of-range targets
-clip to the edge bins; the loss gradient equals `softmax - twohot`; the gradient L1 norm stays
-below 2 for targets of 1, 1e3 and 1e6.
+clip to the edge bins; the loss gradient equals `softmax - twohot`; for targets of 1, 1e3 and
+1e6 the target part of that gradient is a distribution on at most two adjacent bins and the
+gradient L1 norm changes by less than 1%, while the gradient of a squared error on the raw
+target grows by a factor of 1e6.
 
 ### 2. Discrete latents: unimix and straight-through sampling
 
