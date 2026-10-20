@@ -17,7 +17,7 @@ from dreamer_core.world_model import WorldModel, WorldModelConfig
 @dataclass(frozen=True)
 class TrainConfig:
     seed: int = 0
-    steps: int = 1500
+    steps: int = 3000
     batch: int = 16
     seq_len: int = 32
     lr: float = 1e-3
