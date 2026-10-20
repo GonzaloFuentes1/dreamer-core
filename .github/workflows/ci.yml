@@ -21,20 +21,40 @@ jobs:
         run: uvx ruff@0.17.1 format --check .
 
   test:
+    name: test (${{ matrix.python-version }}, ${{ matrix.deps }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        include:
+          - python-version: "3.11"
+            deps: latest
+          - python-version: "3.12"
+            deps: latest
+          # Lower bounds declared in pyproject.toml.
+          - python-version: "3.11"
+            deps: minimum
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - name: create environment
         run: uv venv --python ${{ matrix.python-version }} .venv
-      - name: install cpu torch
+      - name: install cpu torch (latest)
+        if: matrix.deps == 'latest'
         run: uv pip install --python .venv torch --index-url https://download.pytorch.org/whl/cpu
+      - name: install cpu torch and numpy (minimum)
+        if: matrix.deps == 'minimum'
+        run: |
+          uv pip install --python .venv "torch==2.2.0" --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --python .venv "numpy==1.26.0"
       - name: install package
         run: uv pip install --python .venv -e ".[dev,toy]"
+      - name: versions
+        run: .venv/bin/python -c "import numpy, torch; print('torch', torch.__version__, 'numpy', numpy.__version__)"
       - name: pytest
         run: .venv/bin/python -m pytest --durations=10
+      - name: toy training script smoke run
+        run: |
+          .venv/bin/python scripts/train_toy.py --steps 2 --out runs/smoke.json --assets runs/smoke-assets
+          git diff --exit-code -- results assets
