@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -6,6 +7,7 @@ from dreamer_core.actor_critic import (
     Actor,
     ActorCriticConfig,
     Critic,
+    Imagination,
     ImaginationActorCritic,
     ema_update,
     reinforce_loss,
@@ -120,7 +122,120 @@ def test_imagination_losses_train_only_actor_and_critic() -> None:
         assert all(p.grad is None for p in module.parameters())
     assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in behavior.actor.parameters())
     assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in behavior.critic.parameters())
-    assert metrics["return_scale"] >= 1.0
+    assert set(metrics) >= {"actor_loss", "critic_loss", "return_scale"}
+
+
+def test_imagine_wires_actions_rewards_and_continuation_to_the_right_states() -> None:
+    rssm, reward_head, cont_head, behavior = _setup()
+    calls: list[torch.Tensor] = []
+
+    def reward_fn(feature: torch.Tensor) -> torch.Tensor:
+        calls.append(feature)
+        return reward_head(feature).squeeze(-1)
+
+    start = rssm.initial(4)
+    start.stoch[:, :, 0] = 1.0
+    traj = behavior.imagine(
+        rssm,
+        start,
+        reward_fn=reward_fn,
+        cont_fn=lambda f: torch.sigmoid(cont_head(f)).squeeze(-1),
+        generator=torch.Generator().manual_seed(0),
+    )
+    deter = rssm.cfg.deter
+    torch.testing.assert_close(traj.features[:, 0], start.feature(), rtol=0, atol=0)
+    with torch.no_grad():
+        # The deterministic part of state t + 1 is a function of state t and action t only.
+        for t in range(SMALL.horizon):
+            prev = traj.features[:, t]
+            stoch = prev[:, deter:]
+            x = rssm.img_in(torch.cat([stoch, traj.actions[:, t]], -1))
+            torch.testing.assert_close(
+                rssm.gru(x, prev[:, :deter]), traj.features[:, t + 1, :deter]
+            )
+        # Reward and continuation of transition t -> t + 1 come from the features of t + 1.
+        torch.testing.assert_close(traj.reward, reward_head(traj.features[:, 1:]).squeeze(-1))
+        expected_cont = torch.sigmoid(cont_head(traj.features[:, 1:])).squeeze(-1)
+        torch.testing.assert_close(traj.cont, expected_cont)
+    assert len(calls) == 1
+    assert torch.equal(traj.actions.sum(-1), torch.ones(4, SMALL.horizon))
+
+
+def _symlog_np(x: np.ndarray) -> np.ndarray:
+    return np.sign(x) * np.log1p(np.abs(x))
+
+
+def _twohot_ce_np(logits: np.ndarray, target: np.ndarray, bins: np.ndarray) -> np.ndarray:
+    """Loop-based cross-entropy between a two-hot target and ``softmax(logits)``."""
+    log_p = logits - logits.max(-1, keepdims=True)
+    log_p = log_p - np.log(np.exp(log_p).sum(-1, keepdims=True))
+    out = np.zeros(target.shape)
+    for idx in np.ndindex(*target.shape):
+        x = float(np.clip(_symlog_np(target[idx]), bins[0], bins[-1]))
+        k = min(int(np.searchsorted(bins, x, side="right")) - 1, len(bins) - 2)
+        frac = (x - bins[k]) / (bins[k + 1] - bins[k])
+        out[idx] = -((1.0 - frac) * log_p[idx][k] + frac * log_p[idx][k + 1])
+    return out
+
+
+def test_imagination_loss_matches_loop_based_reference() -> None:
+    # Fixed features, actions, rewards and continuations; random critic and slow critic heads
+    # so that values are non-zero and differ between the two. The reference below rebuilds
+    # lambda-returns, the percentile normaliser, advantages, step weights and both losses with
+    # explicit loops from the raw network outputs.
+    torch.manual_seed(0)
+    cfg = ActorCriticConfig(horizon=6, hidden=16, layers=1)
+    feature_dim, action_dim, batch, horizon = 5, 3, 4, cfg.horizon
+    behavior = ImaginationActorCritic(feature_dim, action_dim, cfg).double()
+    with torch.no_grad():
+        for module, std in ((behavior.critic, 0.3), (behavior.slow_critic, 0.5)):
+            for p in module.parameters():
+                p.add_(torch.randn_like(p) * std)
+    gen = torch.Generator().manual_seed(1)
+    feats = torch.randn(batch, horizon + 1, feature_dim, dtype=torch.float64, generator=gen)
+    actions = F.one_hot(torch.randint(0, action_dim, (batch, horizon), generator=gen), action_dim)
+    # Large rewards so that the first normaliser update already gives a scale above 1.
+    reward = 300.0 * torch.randn(batch, horizon, dtype=torch.float64, generator=gen)
+    cont = 0.3 + 0.7 * torch.rand(batch, horizon, dtype=torch.float64, generator=gen)
+    traj = Imagination(feats, actions.double(), reward, cont)
+
+    with torch.no_grad():
+        v = behavior.critic.value(feats).numpy()
+        log_pi = behavior.actor(feats[:, :-1]).numpy()
+        critic_logits = behavior.critic(feats[:, :-1]).numpy()
+        slow_v = behavior.slow_critic.value(feats[:, :-1]).numpy()
+    bins = behavior.critic.twohot.bins.numpy()
+    r, c, a = reward.numpy(), cont.numpy(), actions.numpy()
+
+    ret = np.zeros((batch, horizon))
+    for b in range(batch):
+        last = v[b, horizon]
+        for t in reversed(range(horizon)):
+            boot = (1 - cfg.lam) * v[b, t + 1] + cfg.lam * last
+            last = r[b, t] + cfg.gamma * c[b, t] * boot
+            ret[b, t] = last
+    low = 0.01 * np.quantile(ret, 0.05)  # EMA with decay 0.99 starting from zero
+    high = 0.01 * np.quantile(ret, 0.95)
+    scale = max(1.0, high - low)
+    assert scale > 1.0  # otherwise the test could not see a missing normaliser update
+    adv = (ret - v[:, :-1]) / scale
+    weight = np.ones((batch, horizon))
+    for t in range(1, horizon):
+        weight[:, t] = weight[:, t - 1] * c[:, t - 1]
+    entropy = -(np.exp(log_pi) * log_pi).sum(-1)
+    log_prob = (a * log_pi).sum(-1)
+    actor_ref = (weight * (-adv * log_prob - cfg.entropy_coef * entropy)).mean()
+    ce = _twohot_ce_np(critic_logits, ret, bins)
+    ce_slow = _twohot_ce_np(critic_logits, slow_v, bins)
+    critic_ref = (weight * (ce + cfg.slow_reg * ce_slow)).mean()
+
+    loss, metrics = behavior.loss(traj)
+    np.testing.assert_allclose(metrics["actor_loss"].item(), actor_ref, rtol=1e-10)
+    np.testing.assert_allclose(metrics["critic_loss"].item(), critic_ref, rtol=1e-10)
+    np.testing.assert_allclose(loss.item(), actor_ref + critic_ref, rtol=1e-10)
+    np.testing.assert_allclose(behavior.normalizer.low.item(), low, rtol=1e-12)
+    np.testing.assert_allclose(behavior.normalizer.high.item(), high, rtol=1e-12)
+    np.testing.assert_allclose(metrics["return_scale"].item(), scale, rtol=1e-12)
 
 
 def test_slow_critic_follows_critic_with_ema() -> None:
