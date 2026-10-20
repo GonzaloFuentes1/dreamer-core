@@ -230,15 +230,25 @@ context posterior; the decoder output depends on the stochastic latent.
 16x16 image, with five actions (no-op and four moves, clipped at the walls). A goal cell is
 drawn at half intensity; reaching it gives reward 1 and ends the episode. Training data is a
 50,000-step stream from a sticky random policy. `scripts/train_toy.py` trains the world model
-(660,161 parameters) and then evaluates open-loop prediction on held-out sequences from a
-different seed: 5 observed context frames, then 20 frames imagined from the actions alone.
+(660,161 parameters) and then evaluates open-loop prediction on fresh sequences from a
+different data seed: 5 observed context frames, then 20 frames imagined from the actions
+alone. The sequences are new, the states are not: the training stream contains all 315
+(position, action) pairs the environment can produce (63 non-goal cells times 5 actions), so
+this measures multi-step prediction, not generalization to unseen states.
 
-Measured with `python scripts/train_toy.py --seed 0 --steps 3000` (single run, seed 0) on a
-Windows 11 laptop with an Intel Core i7-13620H, CPU only, torch 2.14.1+cpu with 10 threads.
-Training took 1550 s of wall time (1586 s including data collection and evaluation); the
-machine was running other jobs at the same time, so treat the timing as an upper bound. All
-numbers below are copied from [`results/wm_toy.json`](results/wm_toy.json), which also holds
-the loss curve logged every 25 steps and the full configuration.
+Measured with
+`python scripts/train_toy.py --seed 0 --steps 3000 --out results/wm_toy.json --assets assets`
+(seed 0) at commit `55035f2` on a Windows 11 laptop with an Intel Core i7-13620H, CPU only,
+torch 2.14.1+cpu with 10 threads. Training took 437 s of wall time (443 s including data
+collection and evaluation). Two other runs of the same command on the same laptop took 371 s
+and 458 s, and an earlier run while the machine was busy with other jobs took 1550 s, so
+expect a few minutes to about half an hour depending on load. All runs gave bitwise-identical
+losses and evaluation numbers. All numbers below are copied from
+[`results/wm_toy.json`](results/wm_toy.json), which also holds the commit, the loss curve
+logged every 25 steps and the full configuration. Results are bitwise reproducible on the same
+CPU and torch build; expect small numerical differences elsewhere (in CI, the first training
+step gives the same losses with torch 2.14.1 on Linux but slightly different ones with torch
+2.2.0).
 
 Training losses (per sequence element; `image` is the summed squared error over 256 pixels,
 `kl` the unclipped KL summed over latents):
@@ -254,9 +264,11 @@ The loss sits on a plateau until roughly step 1000 (the decoder draws the static
 and goal, and the KL stays near the 1-nat free-bits floor), then drops once the latent starts
 to encode the dot position.
 
-Open-loop prediction on 64 held-out sequences (5 context frames, then 20 frames imagined from
+Open-loop prediction on 64 fresh sequences (5 context frames, then 20 frames imagined from
 actions only). The baseline repeats the last context frame. Dot-cell accuracy is the fraction
-of frames where the brightest 2x2 block of the prediction is the true dot cell.
+of frames where the brightest 2x2 block of the prediction is the true dot cell. Evaluation
+windows exclude any goal, terminal or episode reset, so reward and continuation prediction are
+not evaluated open-loop; for those two heads only the training losses above are reported.
 
 | metric (mean over 20 imagined steps) | world model | copy last frame |
 | --- | ---: | ---: |
@@ -267,7 +279,7 @@ of frames where the brightest 2x2 block of the prediction is the true dot cell.
 
 ![open-loop imagination vs ground truth](assets/wm_toy_openloop.png)
 
-Four held-out sequences, imagined steps 1 to 20 from left to right. In each pair of rows the
+Four of the evaluation sequences, imagined steps 1 to 20 from left to right. In each pair of rows the
 upper row is the ground truth and the lower row is the world model's open-loop prediction.
 An animated version (ground truth left, prediction right) is in
 [`assets/wm_toy_openloop.gif`](assets/wm_toy_openloop.gif). Both images are written by the
@@ -316,7 +328,8 @@ small environment, a random-policy dataset, and no behavior learning in the loop
   unrelated random calls elsewhere do not shift the samples; this is what makes the
   determinism test meaningful.
 - **Sizes.** Defaults in `RSSMConfig` follow the DreamerV3 latent layout (32 x 32); the toy run
-  uses 16 x 16 latents and a 128-unit deterministic state so it fits in a few CPU minutes.
+  uses 16 x 16 latents and a 128-unit deterministic state so that it trains on a laptop CPU
+  (3000 steps took 437 s in the recorded run, see the toy results above).
 
 ## References
 

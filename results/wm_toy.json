@@ -1,5 +1,9 @@
 {
-  "command": "python scripts/train_toy.py --seed 0 --steps 3000",
+  "command": "python scripts/train_toy.py --seed 0 --steps 3000 --out results/wm_toy.json --assets assets",
+  "git": {
+    "commit": "55035f280c6d3be3937139b6ef1d1149b9ed1e12",
+    "dirty": false
+  },
   "seed": 0,
   "config": {
     "seed": 0,
@@ -23,11 +27,11 @@
   "parameters": 660161,
   "train": {
     "steps_completed": 3000,
-    "train_seconds": 1550.0032307000365,
+    "train_seconds": 436.7200557999895,
     "dataset_rewards": 146.0,
     "dataset_episodes": 333
   },
-  "wall_seconds": 1586.4312036000192,
+  "wall_seconds": 442.92682069999864,
   "hardware": {
     "platform": "Windows-11-10.0.26200-SP0",
     "machine": "AMD64",
