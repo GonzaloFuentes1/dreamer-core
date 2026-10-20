@@ -5,7 +5,7 @@ from dreamer_core.toy.env import MOVES, NUM_ACTIONS, DotGrid, DotGridConfig, col
 from dreamer_core.toy.train import TrainConfig, train_world_model
 from dreamer_core.world_model import WorldModel, WorldModelConfig
 
-TINY = TrainConfig(seed=3, steps=3, batch=4, seq_len=8, data_steps=500, log_every=1)
+TINY = TrainConfig(seed=3, steps=15, batch=4, seq_len=8, data_steps=500, log_every=1)
 
 
 def test_env_moves_dot_and_clips_at_walls() -> None:

@@ -42,7 +42,7 @@ source .venv/bin/activate      # .venv/Scripts/activate on Windows
 
 python -m pytest               # invariant tests
 ruff check . && ruff format --check .
-python scripts/train_toy.py --seed 0 --steps 3000   # toy world model on CPU, see results below
+python scripts/train_toy.py --seed 0 --steps 3000   # toy world model on CPU, writes to runs/
 ```
 
 Minimal use of the blocks:
@@ -75,7 +75,7 @@ imagined = rssm.imagine(post[-1], torch.zeros(8, 15, 4))  # open-loop prior roll
 | `dreamer_core/actor_critic.py` | REINFORCE actor, two-hot critic with slow EMA target, imagination rollout |
 | `dreamer_core/world_model.py` | conv encoder/decoder, reward and continuation heads, world-model loss |
 | `dreamer_core/toy/` | `DotGrid` environment, data collection, seeded training and evaluation |
-| `scripts/train_toy.py` | writes `results/wm_toy.json` and the images in `assets/` |
+| `scripts/train_toy.py` | trains and evaluates the toy world model; writes a JSON record and two images to `runs/` by default |
 
 ## The mechanisms, why they exist, and how each is tested
 

@@ -1,11 +1,14 @@
 """Train the world model on DotGrid on CPU and record what was measured.
 
 Usage:
-    python scripts/train_toy.py --seed 0 --steps 1500
+    python scripts/train_toy.py --seed 0 --steps 3000
+    python scripts/train_toy.py --seed 0 --steps 3000 --out results/wm_toy.json --assets assets
 
-Writes ``results/wm_toy.json`` (config, seed, per-step losses, wall time, hardware, open-loop
-evaluation) and renders ``assets/wm_toy_openloop.png`` and ``assets/wm_toy_openloop.gif``
-from the evaluation rollouts. Requires the ``toy`` extra (Pillow) for the images.
+Writes a JSON record (git commit, config, seed, per-step losses, wall time, hardware,
+open-loop evaluation) and renders ``wm_toy_openloop.png`` and ``wm_toy_openloop.gif`` from
+the evaluation rollouts. By default both go to ``runs/`` (ignored by git); the committed
+results in ``results/`` and ``assets/`` are only overwritten when they are passed explicitly
+as ``--out`` and ``--assets``. Requires the ``toy`` extra (Pillow) for the images.
 """
 
 from __future__ import annotations
@@ -14,6 +17,9 @@ import argparse
 import json
 import os
 import platform
+import shlex
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -42,6 +48,25 @@ def hardware() -> dict[str, Any]:
         "torch": torch.__version__,
         "numpy": np.__version__,
     }
+
+
+def git_state() -> dict[str, Any]:
+    """Commit of the code that produced the results, and whether tracked files were modified."""
+
+    # An explicit GIT_DIR in the environment already tells git which repository to use.
+    cwd = None if "GIT_DIR" in os.environ else ROOT
+
+    def run(*args: str) -> str | None:
+        try:
+            out = subprocess.run(
+                ["git", *args], cwd=cwd, capture_output=True, text=True, check=True, timeout=30
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return out.stdout.strip()
+
+    status = run("status", "--porcelain", "--untracked-files=no")
+    return {"commit": run("rev-parse", "HEAD"), "dirty": None if status is None else bool(status)}
 
 
 def _upscale(frame: np.ndarray, factor: int) -> np.ndarray:
@@ -86,23 +111,23 @@ def render_assets(frames: dict[str, np.ndarray], out_dir: Path, rows: int = 4) -
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--steps", type=int, default=1500)
+    parser.add_argument("--steps", type=int, default=TrainConfig.steps)
     parser.add_argument("--max-seconds", type=float, default=None)
-    parser.add_argument("--out", type=Path, default=ROOT / "results" / "wm_toy.json")
-    parser.add_argument("--assets", type=Path, default=ROOT / "assets")
+    parser.add_argument("--out", type=Path, default=ROOT / "runs" / "wm_toy.json")
+    parser.add_argument("--assets", type=Path, default=ROOT / "runs" / "assets")
     parser.add_argument("--no-render", action="store_true")
     args = parser.parse_args()
 
     cfg = TrainConfig(seed=args.seed, steps=args.steps)
+    git = git_state()  # recorded before training, so later edits cannot be attributed to it
     wall_start = time.perf_counter()
     model, history, info = train_world_model(cfg, max_seconds=args.max_seconds)
     evaluation = evaluate_open_loop(model, cfg, seed=args.seed + 1000)
     frames = evaluation.pop("_frames")
     assets = [] if args.no_render else render_assets(frames, args.assets)
     result = {
-        "command": "python scripts/train_toy.py "
-        + f"--seed {args.seed} --steps {args.steps}"
-        + (f" --max-seconds {args.max_seconds}" if args.max_seconds else ""),
+        "command": shlex.join(["python", "scripts/train_toy.py", *sys.argv[1:]]),
+        "git": git,
         "seed": args.seed,
         "config": config_dict(cfg),
         "parameters": sum(p.numel() for p in model.parameters()),
