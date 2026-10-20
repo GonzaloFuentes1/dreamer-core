@@ -79,9 +79,13 @@ def test_is_first_resets_memory_inside_a_sequence() -> None:
     rssm = make_rssm()
     embed_a, actions_a, is_first = make_inputs(seed=1)
     embed_b, actions_b, _ = make_inputs(seed=2)
-    # Same suffix from step 3 on, different history before it, episode boundary at step 3.
+    # Same observations from step 3 on, different history before it, episode boundary at
+    # step 3. The action entering step 3 also differs: it belongs to the previous episode and
+    # must be ignored together with the previous state.
     embed_b[:, 3:] = embed_a[:, 3:]
-    actions_b[:, 3:] = actions_a[:, 3:]
+    actions_b[:, 4:] = actions_a[:, 4:]
+    actions_b[:, 3] = actions_a[:, 3].roll(1, dims=-1)
+    assert not torch.equal(actions_a[:, 3], actions_b[:, 3])
     is_first[:, 3] = 1.0
     post_a, _ = rssm.observe(
         embed_a, actions_a, is_first, generator=torch.Generator().manual_seed(0)
@@ -92,6 +96,36 @@ def test_is_first_resets_memory_inside_a_sequence() -> None:
     assert not torch.allclose(post_a.deter[:, 2], post_b.deter[:, 2])
     torch.testing.assert_close(post_a.deter[:, 3], post_b.deter[:, 3], rtol=0, atol=0)
     torch.testing.assert_close(post_a.logits[:, 3], post_b.logits[:, 3], rtol=0, atol=0)
+
+
+def test_posterior_depends_on_the_deterministic_state() -> None:
+    # q(z_t | h_t, e_t): with the embedding and action held fixed, a different previous state
+    # (hence a different h_t) must change the posterior.
+    rssm = make_rssm()
+    embed, actions, _ = make_inputs()
+    gen = torch.Generator().manual_seed(0)
+    prev_a = rssm.initial(2)
+    prev_b = State(torch.randn(2, 16, generator=gen), prev_a.stoch, prev_a.logits)
+    post_a, prior_a = rssm.obs_step(prev_a, actions[:, 1], embed[:, 1])
+    post_b, prior_b = rssm.obs_step(prev_b, actions[:, 1], embed[:, 1])
+    assert not torch.allclose(prior_a.deter, prior_b.deter)
+    assert not torch.allclose(post_a.logits, post_b.logits)
+
+
+def test_imagine_output_t_is_the_state_after_action_t() -> None:
+    # Changing actions[:, k] leaves the imagined states before k untouched and changes the
+    # deterministic state at index k (the state reached by taking that action).
+    rssm = make_rssm()
+    embed, actions, is_first = make_inputs()
+    post, _ = rssm.observe(embed, actions, is_first, generator=torch.Generator().manual_seed(0))
+    other = actions.clone()
+    k = 3
+    other[:, k] = actions[:, k].roll(1, dims=-1)
+    base = rssm.imagine(post[-1], actions, generator=torch.Generator().manual_seed(5))
+    changed = rssm.imagine(post[-1], other, generator=torch.Generator().manual_seed(5))
+    assert torch.equal(base.deter[:, :k], changed.deter[:, :k])
+    assert torch.equal(base.stoch[:, :k], changed.stoch[:, :k])
+    assert not torch.allclose(base.deter[:, k], changed.deter[:, k])
 
 
 def test_reconstruction_gradient_reaches_encoder_through_discrete_latents() -> None:
