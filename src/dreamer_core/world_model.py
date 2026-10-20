@@ -2,8 +2,8 @@
 
 It wires a convolutional encoder and decoder around the :class:`~dreamer_core.rssm.RSSM`, adds
 a two-hot reward head and a Bernoulli continuation head, and combines their losses with the
-balanced KL. Sizes are deliberately small so that it trains on a CPU in minutes; the
-structure, not the scale, is what this module demonstrates.
+balanced KL. Sizes are deliberately small so that it trains on a laptop CPU (see the README
+for the measured time); the structure, not the scale, is what this module demonstrates.
 
 Batch convention (DreamerV3 replay format), all tensors ``(batch, time, ...)``:
 ``image[t]`` is observation ``t``; ``prev_action[t]`` the action that led to it; ``reward[t]``
