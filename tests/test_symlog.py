@@ -108,14 +108,28 @@ def test_loss_gradient_is_softmax_minus_two_hot() -> None:
     torch.testing.assert_close(logits.grad, expected)
 
 
-def test_loss_gradient_does_not_scale_with_target_magnitude() -> None:
-    # The reason for the two-hot head: the gradient w.r.t. the logits is p - twohot(y), which
-    # is bounded by 2 in L1 norm whatever the scale of y, unlike a squared error.
+def test_two_hot_gradient_stays_bounded_where_a_squared_error_grows_with_the_target() -> None:
+    # The reason for the two-hot head. Its gradient w.r.t. the logits is p - twohot(y): the
+    # target part is a distribution on at most two adjacent bins whatever the scale of y, so
+    # the gradient has the same structure and size for y = 1 and y = 1e6. A squared error on
+    # the raw target has gradient 2 (pred - y), which grows linearly with y.
     head = TwoHot()
-    norms = []
-    for scale in [1.0, 1e3, 1e6]:
-        logits = torch.zeros(1, 255, requires_grad=True)
-        head.loss(logits, torch.tensor([scale])).sum().backward()
+    targets = [1.0, 1e3, 1e6]
+    twohot_norms, mse_norms = [], []
+    for y in targets:
+        logits = torch.zeros(1, 255, dtype=torch.float64, requires_grad=True)
+        head.loss(logits, torch.tensor([y], dtype=torch.float64)).sum().backward()
         assert logits.grad is not None
-        norms.append(logits.grad.abs().sum().item())
-    assert max(norms) <= 2.0 + 1e-6
+        target_part = torch.softmax(logits.detach(), -1) - logits.grad
+        support = (target_part[0].abs() > 1e-12).nonzero().flatten()
+        assert len(support) <= 2
+        assert support.max() - support.min() <= 1
+        torch.testing.assert_close(target_part.sum(), torch.tensor(1.0, dtype=torch.float64))
+        twohot_norms.append(logits.grad.abs().sum().item())
+
+        pred = torch.zeros(1, dtype=torch.float64, requires_grad=True)
+        (pred - y).pow(2).sum().backward()
+        assert pred.grad is not None
+        mse_norms.append(pred.grad.abs().sum().item())
+    assert max(twohot_norms) / min(twohot_norms) < 1.01
+    assert mse_norms[-1] / mse_norms[0] > 1e5
