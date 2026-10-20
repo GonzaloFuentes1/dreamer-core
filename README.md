@@ -8,8 +8,9 @@ KL balancing with free bits, symlog two-hot heads, lambda-returns, percentile re
 normalization and an imagination actor-critic. Each mechanism lives in its own module and is
 paired with a unit test that checks the property it is supposed to have (an exact inverse, a
 gradient that reaches only the intended parameters, parity with an independent reference),
-rather than relying on a learning curve to reveal a mistake. A pure-NumPy toy environment and
-a CPU training script show the pieces working together.
+rather than relying on a learning curve to reveal a mistake. A CPU training script trains the
+world model (encoder, RSSM, KL balancing, two-hot reward head) end to end on a pure-NumPy toy
+environment; the actor-critic is unit-tested only and is not part of that run.
 
 ## What it is and what it is not
 
@@ -17,8 +18,8 @@ It is:
 
 - a set of building blocks with invariant tests, intended as a reference when implementing or
   debugging a Dreamer-style agent;
-- CPU-friendly: CI uses CPU-only torch and the full suite of 67 tests ran in 7.7 s on a GitHub
-  ubuntu-latest runner;
+- CPU-friendly: CI uses CPU-only torch, and the full suite of 80 tests ran in 2.9 s to 7.1 s
+  per job on GitHub ubuntu-latest runners;
 - a small end-to-end world-model run on a toy image environment, with the measured numbers
   and the script that produced them.
 
@@ -27,7 +28,7 @@ It is not:
 - a full agent that reproduces DreamerV3 benchmark results. There is no environment
   interaction loop, replay buffer with state carry-over, or Atari/DMC/Minecraft setup. For
   that, use the official implementation, [danijar/dreamerv3](https://github.com/danijar/dreamerv3).
-- a DreamerV4 implementation. For a re-implementation of DreamerV4 see
+- a Dreamer 4 implementation. For a re-implementation of Dreamer 4 see
   [GonzaloFuentes1/dreamer4](https://github.com/GonzaloFuentes1/dreamer4).
 
 ## Quickstart
@@ -91,6 +92,13 @@ linear interpolation; the prediction is `symexp(sum_k p_k b_k)`. The cross-entro
 with respect to the logits is `softmax(l) - twohot(y)`, whose size does not depend on the
 magnitude of `y`.
 
+This follows the `DiscDist` convention of the original official code (danijar/dreamerv3 as
+released in January 2023): bins are spaced evenly in symlog space, and both the two-hot
+interpolation and the expectation happen there before `symexp`. The paper (arXiv v2, Eq. 10)
+and the current official code (`symexp_twohot`) instead place the bins at
+`symexp(linspace(-20, 20))` and interpolate and average them in raw space. The bin positions
+are the same; the two differ in where interpolation and averaging take place.
+
 Tests (`tests/test_symlog.py`): `symexp(symlog(x)) == x` to 1e-12 relative error over 15
 orders of magnitude; two-hot weights match an independent loop-based reference; weights sum
 to one and sit on at most two adjacent bins; `decode(encode(y)) == y`; out-of-range targets
@@ -127,12 +135,18 @@ cannot be predicted. The GRU uses LayerNorm on its gates and an update-gate bias
 favors keeping memory early in training. `observe` filters a sequence and resets the state
 where `is_first` is set; `imagine` rolls the prior forward from actions alone.
 
+Tests (`tests/test_nets.py`): the GRU cell matches a hand-written formula (LayerNorm on
+`W [x, h]`, reset/candidate/update split, update bias -1) to 1e-14 in float64; with zero gate
+pre-activations it keeps exactly `sigmoid(1)`, about 0.73, of the previous state.
+
 Tests (`tests/test_rssm.py`): shapes for several latent layouts; unimix floor holds for both
 heads with extreme logits; the priors produced by `observe` are bitwise equal to a one-step
 `img_step` from the previous posterior; `imagine` equals a loop of `img_step` with the same
-generator; with `is_first` set mid-sequence, two sequences with different histories produce
-identical states from the boundary on; gradients reach the encoder embedding through the
-sampled latents.
+generator, and changing `actions[:, k]` changes the imagined state at index `k` but none
+before it; the posterior changes when only `h_t` changes; with `is_first` set mid-sequence,
+two sequences with different histories and a different action entering the boundary step
+produce identical states from the boundary on; gradients reach the encoder embedding through
+the sampled latents.
 
 ### 4. KL balancing and free bits
 
@@ -177,7 +191,7 @@ reward scales. The `max(1, S)` floor avoids amplifying noise when returns are sm
 standard-deviation normalization would do under sparse rewards; percentiles make the scale
 robust to outliers. The two percentiles are tracked with separate EMAs (decay 0.99).
 
-Tests: exact EMA values after three updates; returns with spread below 1 are left unscaled;
+Tests (`tests/test_returns.py`): exact EMA values after three updates; returns with spread below 1 are left unscaled;
 returns with spread 9e4 are divided by it; 0.5% outliers of 1e6 move the scale by less than
 2%.
 
@@ -190,14 +204,25 @@ learned dynamics, so trajectories are imagined under `no_grad`. The critic uses 
 two-hot head as the reward predictor, its output layer is zero-initialized (initial value
 exactly zero up to float rounding), and it is regularized toward a slow EMA copy of itself
 (decay 0.98). Steps after a predicted terminal are down-weighted by the cumulative product of
-continuation probabilities.
+continuation probabilities, `w_t = prod_{i<t} c_i`, without the discount factor (see the
+design notes).
 
 Tests (`tests/test_actor_critic.py`): the REINFORCE gradient matches the closed form
 `-A (onehot(a) - p)`; no gradient flows into the advantage; with zero advantage the entropy
 bonus increases entropy; the EMA update matches its formula; a two-armed bandit is solved
 (probability of the better arm above 0.95 after 150 updates); the imagination losses produce
 gradients in the actor and critic only, never in the RSSM, the reward and continuation heads
-or the slow critic.
+or the slow critic; the actor and critic losses and the normalizer buffers match a loop-based
+NumPy reference (lambda-returns, percentile EMA from zero, advantage `(R - v_t) / S`, step
+weights, entropy term, two-hot cross-entropy to the returns and to the slow critic); in
+`imagine`, state `t + 1` follows from state `t` and action `t`, and reward and continuation
+are read from the features of state `t + 1`.
+
+The image world model in `world_model.py` is tested in `tests/test_world_model.py`: every loss
+term matches a recomputation from the components (with the KL arguments in the order
+posterior, prior); the dynamics term adds no gradient to the posterior head; `is_first` resets
+the state inside the loss; `open_loop` equals decoding a hand-built `imagine` from the last
+context posterior; the decoder output depends on the stochastic latent.
 
 ## Toy world model: DotGrid
 
@@ -205,15 +230,25 @@ or the slow critic.
 16x16 image, with five actions (no-op and four moves, clipped at the walls). A goal cell is
 drawn at half intensity; reaching it gives reward 1 and ends the episode. Training data is a
 50,000-step stream from a sticky random policy. `scripts/train_toy.py` trains the world model
-(660,161 parameters) and then evaluates open-loop prediction on held-out sequences from a
-different seed: 5 observed context frames, then 20 frames imagined from the actions alone.
+(660,161 parameters) and then evaluates open-loop prediction on fresh sequences from a
+different data seed: 5 observed context frames, then 20 frames imagined from the actions
+alone. The sequences are new, the states are not: the training stream contains all 315
+(position, action) pairs the environment can produce (63 non-goal cells times 5 actions), so
+this measures multi-step prediction, not generalization to unseen states.
 
-Measured with `python scripts/train_toy.py --seed 0 --steps 3000` (single run, seed 0) on a
-Windows 11 laptop with an Intel Core i7-13620H, CPU only, torch 2.14.1+cpu with 10 threads.
-Training took 1550 s of wall time (1586 s including data collection and evaluation); the
-machine was running other jobs at the same time, so treat the timing as an upper bound. All
-numbers below are copied from [`results/wm_toy.json`](results/wm_toy.json), which also holds
-the loss curve logged every 25 steps and the full configuration.
+Measured with
+`python scripts/train_toy.py --seed 0 --steps 3000 --out results/wm_toy.json --assets assets`
+(seed 0) at commit `55035f2` on a Windows 11 laptop with an Intel Core i7-13620H, CPU only,
+torch 2.14.1+cpu with 10 threads. Training took 437 s of wall time (443 s including data
+collection and evaluation). Two other runs of the same command on the same laptop took 371 s
+and 458 s, and an earlier run while the machine was busy with other jobs took 1550 s, so
+expect a few minutes to about half an hour depending on load. All runs gave bitwise-identical
+losses and evaluation numbers. All numbers below are copied from
+[`results/wm_toy.json`](results/wm_toy.json), which also holds the commit, the loss curve
+logged every 25 steps and the full configuration. Results are bitwise reproducible on the same
+CPU and torch build; expect small numerical differences elsewhere (in CI, the first training
+step gives the same losses with torch 2.14.1 on Linux but slightly different ones with torch
+2.2.0).
 
 Training losses (per sequence element; `image` is the summed squared error over 256 pixels,
 `kl` the unclipped KL summed over latents):
@@ -229,9 +264,11 @@ The loss sits on a plateau until roughly step 1000 (the decoder draws the static
 and goal, and the KL stays near the 1-nat free-bits floor), then drops once the latent starts
 to encode the dot position.
 
-Open-loop prediction on 64 held-out sequences (5 context frames, then 20 frames imagined from
+Open-loop prediction on 64 fresh sequences (5 context frames, then 20 frames imagined from
 actions only). The baseline repeats the last context frame. Dot-cell accuracy is the fraction
-of frames where the brightest 2x2 block of the prediction is the true dot cell.
+of frames where the brightest 2x2 block of the prediction is the true dot cell. Evaluation
+windows exclude any goal, terminal or episode reset, so reward and continuation prediction are
+not evaluated open-loop; for those two heads only the training losses above are reported.
 
 | metric (mean over 20 imagined steps) | world model | copy last frame |
 | --- | ---: | ---: |
@@ -242,7 +279,7 @@ of frames where the brightest 2x2 block of the prediction is the true dot cell.
 
 ![open-loop imagination vs ground truth](assets/wm_toy_openloop.png)
 
-Four held-out sequences, imagined steps 1 to 20 from left to right. In each pair of rows the
+Four of the evaluation sequences, imagined steps 1 to 20 from left to right. In each pair of rows the
 upper row is the ground truth and the lower row is the world model's open-loop prediction.
 An animated version (ground truth left, prediction right) is in
 [`assets/wm_toy_openloop.gif`](assets/wm_toy_openloop.gif). Both images are written by the
@@ -256,15 +293,20 @@ small environment, a random-policy dataset, and no behavior learning in the loop
 - **Parity with independent references**: two-hot weights against a loop-based
   implementation, lambda-returns against GAE, KL and entropy against `torch.distributions`,
   straight-through gradients against the closed-form softmax Jacobian, REINFORCE gradients
-  against the score-function formula, EMA updates against their formula.
+  against the score-function formula, EMA updates against their formula, the GRU cell against
+  its formula, the imagination actor-critic losses against a loop-based NumPy reference.
 - **Gradient routing**: explicit `torch.autograd.grad` checks that each loss term reaches
-  exactly the parameters it should (KL balancing, actor-critic isolation from the world model).
+  exactly the parameters it should (KL balancing inside the RSSM and inside the world-model
+  loss, actor-critic isolation from the world model).
 - **Exact identities**: symlog/symexp inverse, decode(encode(y)), observe/imagine consistency,
   `is_first` resets, hand-computed returns.
-- **Determinism**: two training runs with the same seed give bitwise-identical losses and
-  parameters on CPU; a different seed gives different ones (`tests/test_toy.py`).
-- **Lint and CI**: `ruff check` and `ruff format --check`, and `pytest` on Python 3.11 and 3.12
-  with CPU-only torch on every pull request.
+- **Determinism**: two 15-step training runs with the same seed give bitwise-identical losses
+  (logged every step) and parameters on CPU; a different seed gives different ones
+  (`tests/test_toy.py`).
+- **Lint and CI**: `ruff check` and `ruff format --check`, and `pytest` with CPU-only torch on
+  every pull request: the latest torch on Python 3.11 and 3.12, and the lower bounds declared
+  in `pyproject.toml` (torch 2.2.0, numpy 1.26.0) on Python 3.11. Each job also runs the toy
+  training script for 2 steps and checks that the committed results are left untouched.
 
 ## Design notes
 
@@ -277,13 +319,17 @@ small environment, a random-policy dataset, and no behavior learning in the loop
   latent state across replay chunks; both are omitted here for simplicity.
 - **Returns use the online critic** (detached); the slow critic only provides the
   regularization target.
+- **Step weights without discount.** Actor and critic losses weight step `t` by
+  `prod_{i<t} c_i`. The official code uses `cumprod(gamma * c) / gamma`, which also
+  down-weights later imagined steps by `gamma^t`; that factor is omitted here.
 - **Image loss** is a summed squared error on pixels in [0, 1]; symlog is used for the reward
   and value targets.
 - **Dedicated generators.** Latent and action sampling take an explicit `torch.Generator`, so
   unrelated random calls elsewhere do not shift the samples; this is what makes the
   determinism test meaningful.
 - **Sizes.** Defaults in `RSSMConfig` follow the DreamerV3 latent layout (32 x 32); the toy run
-  uses 16 x 16 latents and a 128-unit deterministic state so it fits in a few CPU minutes.
+  uses 16 x 16 latents and a 128-unit deterministic state so that it trains on a laptop CPU
+  (3000 steps took 437 s in the recorded run, see the toy results above).
 
 ## References
 
@@ -296,7 +342,7 @@ small environment, a random-policy dataset, and no behavior learning in the loop
 - Official DreamerV3 implementation: [github.com/danijar/dreamerv3](https://github.com/danijar/dreamerv3)
 - J. Schulman, P. Moritz, S. Levine, M. Jordan, P. Abbeel. *High-Dimensional Continuous Control
   Using Generalized Advantage Estimation*. [arXiv:1506.02438](https://arxiv.org/abs/1506.02438)
-- DreamerV4 re-implementation by the same author:
+- Dreamer 4 re-implementation by the same author:
   [github.com/GonzaloFuentes1/dreamer4](https://github.com/GonzaloFuentes1/dreamer4)
 
 ## License

@@ -12,8 +12,10 @@ large targets dominate the gradient. The two mechanisms here remove that sensiti
 
 Bins are evenly spaced in symlog space, which makes them exponentially spaced (symexp-spaced)
 in the raw space. Interpolation between the two neighboring bins happens in symlog space and
-decoding applies ``symexp`` to the expected bin position, following the convention of the
-reference implementation (``DiscDist`` in danijar/dreamerv3).
+decoding applies ``symexp`` to the expected bin position, following ``DiscDist`` in the
+original release of danijar/dreamerv3 (January 2023). The DreamerV3 paper (arXiv v2, Eq. 10)
+and the current official code (``symexp_twohot``) instead interpolate and average in raw space
+over bins placed at ``symexp(linspace(-20, 20))``.
 """
 
 from __future__ import annotations
