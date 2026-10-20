@@ -3,11 +3,11 @@
 The world model is frozen from the point of view of these losses: trajectories are imagined
 under ``torch.no_grad`` and only the actor and critic parameters receive gradients.
 
-* Actor: REINFORCE with normalised advantages and an entropy bonus. For discrete actions the
+* Actor: REINFORCE with normalized advantages and an entropy bonus. For discrete actions the
   score-function estimator is unbiased and does not require differentiating through the
   learned dynamics, which is why DreamerV3 uses it instead of backpropagating returns.
 * Critic: a two-hot head over symlog bins (the same head as the reward predictor), trained on
-  lambda-returns, and regularised towards the predictions of a slow EMA copy of itself so the
+  lambda-returns, and regularized toward the predictions of a slow EMA copy of itself so the
   value targets do not chase their own fast-moving estimates.
 """
 
@@ -50,12 +50,12 @@ class Actor(nn.Module):
         self.unimix = cfg.unimix
 
     def forward(self, feature: Tensor) -> Tensor:
-        """Return normalised action log-probabilities."""
+        """Return normalized action log-probabilities."""
         return unimix_logits(self.net(feature), self.unimix)
 
 
 class Critic(nn.Module):
-    """Two-hot value head. The output layer is zero-initialised so ``V = 0`` at the start."""
+    """Two-hot value head. The output layer is zero-initialized so ``V = 0`` at the start."""
 
     def __init__(self, feature_dim: int, cfg: ActorCriticConfig, num_bins: int = 255) -> None:
         super().__init__()
@@ -99,7 +99,7 @@ class Imagination:
 
 
 class ImaginationActorCritic(nn.Module):
-    """Actor, critic, slow critic and return normaliser, trained from imagined rollouts."""
+    """Actor, critic, slow critic and return normalizer, trained from imagined rollouts."""
 
     def __init__(self, feature_dim: int, action_dim: int, cfg: ActorCriticConfig) -> None:
         super().__init__()
@@ -136,7 +136,7 @@ class ImaginationActorCritic(nn.Module):
         )
 
     def loss(self, traj: Imagination) -> tuple[Tensor, dict[str, Tensor]]:
-        """Actor and critic losses for one imagined batch. Updates the return normaliser."""
+        """Actor and critic losses for one imagined batch. Updates the return normalizer."""
         cfg = self.cfg
         feats = traj.features.detach()
         with torch.no_grad():

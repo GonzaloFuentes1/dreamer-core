@@ -1,7 +1,7 @@
 """KL balancing with free bits.
 
-A single ``KL(q || p)`` term trains the posterior ``q`` and the prior ``p`` towards each other
-at the same rate. That is undesirable: the posterior can collapse towards an uninformative
+A single ``KL(q || p)`` term trains the posterior ``q`` and the prior ``p`` toward each other
+at the same rate. That is undesirable: the posterior can collapse toward an uninformative
 prior faster than the prior learns to predict, and the representation stops carrying
 information about the observation. DreamerV3 splits the KL into two terms with stop-gradients:
 

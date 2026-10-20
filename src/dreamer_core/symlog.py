@@ -11,7 +11,7 @@ large targets dominate the gradient. The two mechanisms here remove that sensiti
   update from the scale of the rewards.
 
 Bins are evenly spaced in symlog space, which makes them exponentially spaced (symexp-spaced)
-in the raw space. Interpolation between the two neighbouring bins happens in symlog space and
+in the raw space. Interpolation between the two neighboring bins happens in symlog space and
 decoding applies ``symexp`` to the expected bin position, following the convention of the
 reference implementation (``DiscDist`` in danijar/dreamerv3).
 """
@@ -89,7 +89,7 @@ class TwoHot(nn.Module):
         return symexp((probs * bins).sum(-1))
 
     def mean(self, logits: Tensor) -> Tensor:
-        """Decode the prediction of a head that outputs unnormalised logits."""
+        """Decode the prediction of a head that outputs unnormalized logits."""
         return self.decode(torch.softmax(logits, dim=-1))
 
     def loss(self, logits: Tensor, target: Tensor) -> Tensor:

@@ -63,7 +63,7 @@ def test_ema_update_matches_formula() -> None:
         torch.testing.assert_close(got.detach(), want)
 
 
-def test_critic_predicts_zero_at_initialisation() -> None:
+def test_critic_predicts_zero_at_initialization() -> None:
     # Zero output weights give uniform bin probabilities, whose mean over the symmetric bins
     # is zero up to float32 rounding, for any input.
     critic = Critic(feature_dim=10, cfg=SMALL)
@@ -72,7 +72,7 @@ def test_critic_predicts_zero_at_initialisation() -> None:
     torch.testing.assert_close(critic.value(torch.randn(8, 10)), torch.zeros(8), rtol=0, atol=1e-6)
 
 
-def test_reinforce_with_normalised_advantages_solves_a_bandit() -> None:
+def test_reinforce_with_normalized_advantages_solves_a_bandit() -> None:
     # Arm 0 pays 1, arm 1 pays 0: the policy must concentrate on arm 0.
     torch.manual_seed(0)
     actor = Actor(feature_dim=1, action_dim=2, cfg=SMALL)
@@ -181,7 +181,7 @@ def _twohot_ce_np(logits: np.ndarray, target: np.ndarray, bins: np.ndarray) -> n
 def test_imagination_loss_matches_loop_based_reference() -> None:
     # Fixed features, actions, rewards and continuations; random critic and slow critic heads
     # so that values are non-zero and differ between the two. The reference below rebuilds
-    # lambda-returns, the percentile normaliser, advantages, step weights and both losses with
+    # lambda-returns, the percentile normalizer, advantages, step weights and both losses with
     # explicit loops from the raw network outputs.
     torch.manual_seed(0)
     cfg = ActorCriticConfig(horizon=6, hidden=16, layers=1)
@@ -194,7 +194,7 @@ def test_imagination_loss_matches_loop_based_reference() -> None:
     gen = torch.Generator().manual_seed(1)
     feats = torch.randn(batch, horizon + 1, feature_dim, dtype=torch.float64, generator=gen)
     actions = F.one_hot(torch.randint(0, action_dim, (batch, horizon), generator=gen), action_dim)
-    # Large rewards so that the first normaliser update already gives a scale above 1.
+    # Large rewards so that the first normalizer update already gives a scale above 1.
     reward = 300.0 * torch.randn(batch, horizon, dtype=torch.float64, generator=gen)
     cont = 0.3 + 0.7 * torch.rand(batch, horizon, dtype=torch.float64, generator=gen)
     traj = Imagination(feats, actions.double(), reward, cont)
@@ -217,7 +217,7 @@ def test_imagination_loss_matches_loop_based_reference() -> None:
     low = 0.01 * np.quantile(ret, 0.05)  # EMA with decay 0.99 starting from zero
     high = 0.01 * np.quantile(ret, 0.95)
     scale = max(1.0, high - low)
-    assert scale > 1.0  # otherwise the test could not see a missing normaliser update
+    assert scale > 1.0  # otherwise the test could not see a missing normalizer update
     adv = (ret - v[:, :-1]) / scale
     weight = np.ones((batch, horizon))
     for t in range(1, horizon):

@@ -5,7 +5,7 @@
 Small, readable PyTorch implementations of the mechanisms that make DreamerV3-style world
 models train robustly: the RSSM with discrete latents, unimix and straight-through sampling,
 KL balancing with free bits, symlog two-hot heads, lambda-returns, percentile return
-normalisation and an imagination actor-critic. Each mechanism lives in its own module and is
+normalization and an imagination actor-critic. Each mechanism lives in its own module and is
 paired with a unit test that checks the property it is supposed to have (an exact inverse, a
 gradient that reaches only the intended parameters, parity with an independent reference),
 rather than relying on a learning curve to reveal a mistake. A pure-NumPy toy environment and
@@ -68,7 +68,7 @@ imagined = rssm.imagine(post[-1], torch.zeros(8, 15, 4))  # open-loop prior roll
 | --- | --- |
 | `dreamer_core/symlog.py` | `symlog`, `symexp`, `TwoHot` encoder/decoder and loss |
 | `dreamer_core/distributions.py` | unimix, straight-through one-hot sampling, categorical KL and entropy |
-| `dreamer_core/nets.py` | LayerNorm MLP (optional zero-initialised output), LayerNorm GRU cell |
+| `dreamer_core/nets.py` | LayerNorm MLP (optional zero-initialized output), LayerNorm GRU cell |
 | `dreamer_core/rssm.py` | `RSSM`: `img_step`, `obs_step`, `observe`, `imagine` |
 | `dreamer_core/losses.py` | `kl_balance`: dynamics/representation split with free bits |
 | `dreamer_core/returns.py` | `lambda_return`, `ReturnNormalizer` |
@@ -124,7 +124,7 @@ $$h_t = f_\phi(h_{t-1}, z_{t-1}, a_{t-1}), \quad z_t \sim q_\phi(z_t \mid h_t, e
 The deterministic GRU state carries information over many steps without sampling noise; the
 stochastic state (32 categoricals of 32 classes by default, configurable) represents what
 cannot be predicted. The GRU uses LayerNorm on its gates and an update-gate bias of -1, which
-favours keeping memory early in training. `observe` filters a sequence and resets the state
+favors keeping memory early in training. `observe` filters a sequence and resets the state
 where `is_first` is set; `imagine` rolls the prior forward from actions alone.
 
 Tests (`tests/test_rssm.py`): shapes for several latent layouts; unimix floor holds for both
@@ -139,8 +139,8 @@ sampled latents.
 $$\mathcal{L}_{dyn} = \max\big(1, \mathrm{KL}[\mathrm{sg}(q) \,\|\, p]\big), \quad \mathcal{L}_{rep} = \max\big(1, \mathrm{KL}[q \,\|\, \mathrm{sg}(p)]\big), \quad \mathcal{L} = 0.5\,\mathcal{L}_{dyn} + 0.1\,\mathcal{L}_{rep}$$
 
 A single KL would pull posterior and prior together at the same rate, letting the posterior
-collapse towards a poor prior. The split trains the prior to predict the posterior faster
-than the posterior is regularised towards the prior. Free bits stop optimising a KL that is
+collapse toward a poor prior. The split trains the prior to predict the posterior faster
+than the posterior is regularized toward the prior. Free bits stop optimizing a KL that is
 already below 1 nat (summed over latents, per batch and time element), leaving capacity to
 the reconstruction loss.
 
@@ -168,13 +168,13 @@ the test; parity with an independent GAE formulation (Schulman et al., `R = A^GA
 four (gamma, lambda) pairs; lambda = 0 gives the one-step TD target and lambda = 1 the
 discounted Monte Carlo return plus the discounted bootstrap.
 
-### 6. Percentile return normalisation
+### 6. Percentile return normalization
 
 $$S = \mathrm{EMA}\big(\mathrm{Per}(R, 95) - \mathrm{Per}(R, 5)\big), \qquad A_t = \frac{R^\lambda_t - v_t}{\max(1, S)}$$
 
 Dividing advantages by the return spread lets one entropy coefficient (3e-4) work across
 reward scales. The `max(1, S)` floor avoids amplifying noise when returns are small, which a
-standard-deviation normalisation would do under sparse rewards; percentiles make the scale
+standard-deviation normalization would do under sparse rewards; percentiles make the scale
 robust to outliers. The two percentiles are tracked with separate EMAs (decay 0.99).
 
 Tests: exact EMA values after three updates; returns with spread below 1 are left unscaled;
@@ -187,8 +187,8 @@ $$\mathcal{L}_{actor} = -\,\mathrm{sg}(A_t)\,\ln \pi(a_t \mid s_t) - \eta\, \mat
 
 For discrete actions, REINFORCE gives unbiased gradients without differentiating through the
 learned dynamics, so trajectories are imagined under `no_grad`. The critic uses the same
-two-hot head as the reward predictor, its output layer is zero-initialised (initial value
-exactly zero up to float rounding), and it is regularised towards a slow EMA copy of itself
+two-hot head as the reward predictor, its output layer is zero-initialized (initial value
+exactly zero up to float rounding), and it is regularized toward a slow EMA copy of itself
 (decay 0.98). Steps after a predicted terminal are down-weighted by the cumulative product of
 continuation probabilities.
 
@@ -249,7 +249,7 @@ An animated version (ground truth left, prediction right) is in
 script.
 
 This is a sanity check that the components train together, not a benchmark: one seed, one
-small environment, a random-policy dataset, and no behaviour learning in the loop.
+small environment, a random-policy dataset, and no behavior learning in the loop.
 
 ## How it is verified
 
@@ -276,7 +276,7 @@ small environment, a random-policy dataset, and no behaviour learning in the loo
   `is_first = 1`. The reference implementation uses a learned initial state and can carry
   latent state across replay chunks; both are omitted here for simplicity.
 - **Returns use the online critic** (detached); the slow critic only provides the
-  regularisation target.
+  regularization target.
 - **Image loss** is a summed squared error on pixels in [0, 1]; symlog is used for the reward
   and value targets.
 - **Dedicated generators.** Latent and action sampling take an explicit `torch.Generator`, so

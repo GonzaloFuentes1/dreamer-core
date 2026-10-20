@@ -1,7 +1,7 @@
 """Seeding helpers.
 
 World-model training draws randomness from three places (Python, NumPy for the
-environment, and torch for initialisation and latent sampling). Seeding only one of them
+environment, and torch for initialization and latent sampling). Seeding only one of them
 is the most common reason two "identical" runs diverge, so they are seeded together.
 """
 

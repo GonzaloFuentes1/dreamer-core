@@ -40,7 +40,7 @@ def train_world_model(
 ) -> tuple[WorldModel, list[dict[str, float]], dict[str, Any]]:
     """Train from a fixed random-policy dataset. Returns ``(model, history, info)``.
 
-    Everything random (dataset, window sampling, initialisation, latent samples) derives from
+    Everything random (dataset, window sampling, initialization, latent samples) derives from
     ``cfg.seed``, so two calls with the same config produce bitwise-identical results on the
     same CPU and torch build.
     """

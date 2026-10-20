@@ -10,7 +10,7 @@ class MLP(nn.Module):
     """``[Linear -> LayerNorm -> SiLU] x layers``, optionally followed by a linear output.
 
     Hidden linears have no bias because the following LayerNorm would cancel it. The output
-    layer can be zero-initialised: DreamerV3 does this for the reward and critic heads so that
+    layer can be zero-initialized: DreamerV3 does this for the reward and critic heads so that
     their initial predictions are exactly zero instead of a random, possibly large, value that
     the actor would immediately chase.
     """
@@ -48,7 +48,7 @@ class LayerNormGRUCell(nn.Module):
 
     This is the recurrent core used by DreamerV2/V3. The LayerNorm keeps gate
     pre-activations well scaled over long rollouts, and the ``update_bias = -1`` shifts the
-    update gate towards *keeping* the previous state at initialisation, which makes the
+    update gate toward *keeping* the previous state at initialization, which makes the
     deterministic path a good memory before the network has learned what to overwrite.
     """
 
